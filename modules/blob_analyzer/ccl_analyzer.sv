@@ -2,11 +2,8 @@
 
 // Connected Component Labeling + circularity detection.
 // Single-pass streaming CCL with 1 line buffer of label IDs.
-// At frame end, selects blob closest to pi/4 circularity.
-//
-// Pipeline:
-//   Stage 1 (combined): label assignment + blob stats update (same cycle)
-//   Stage 2:            frame-end scan, circularity computation, best-blob select
+// Includes label equivalence resolution (merge) at frame end.
+// At frame end, resolves merges then selects blob closest to pi/4 circularity.
 
 module ccl_analyzer #(
     parameter integer IMAGE_WIDTH      = 640,
@@ -41,14 +38,11 @@ module ccl_analyzer #(
     // ============================================================
     //  Data stores
     // ============================================================
-
-    // Line buffer: label of each pixel in previous row
     logic [LABEL_BITS-1:0] line_buf      [0:IMAGE_WIDTH-1];
     logic [LABEL_BITS-1:0] prev_pixel_label;
     logic [LABEL_BITS-1:0] cur_label;
     logic [LABEL_BITS-1:0] next_label_id;
 
-    // Per-label statistics (updated in Stage 1, read by Stage 2)
     logic [15:0] lbl_min_x   [0:MAX_LABELS-1];
     logic [15:0] lbl_max_x   [0:MAX_LABELS-1];
     logic [15:0] lbl_min_y   [0:MAX_LABELS-1];
@@ -57,29 +51,21 @@ module ccl_analyzer #(
     logic [31:0] lbl_sum_x   [0:MAX_LABELS-1];
     logic [31:0] lbl_sum_y   [0:MAX_LABELS-1];
     logic        lbl_active  [0:MAX_LABELS-1];
-    logic [LABEL_BITS-1:0] lbl_merge [0:MAX_LABELS-1];
+    logic [LABEL_BITS-1:0] lbl_merge [0:MAX_LABELS-1];  // union-find parent
 
-    // 1-cycle delay pipeline for frame-end detection (used by Stage 2)
     logic        s1_valid, s1_le;
     logic [15:0] s1_y;
 
-    // ============================================================
-    //  Combinational: above-neighbour label
-    // ============================================================
     logic [LABEL_BITS-1:0] above_label;
     assign above_label = line_buf[pixel_x];
 
-    // Gated version: suppress stale line_buf data on frame-start
     logic [LABEL_BITS-1:0] above_label_gated;
     assign above_label_gated = frame_start ? '0 : above_label;
 
-    // ============================================================
-    //  Loop variable
-    // ============================================================
     logic [31:0] loop_i;
 
     // ============================================================
-    //  Stage 1: Label assignment + blob statistics (combined)
+    //  Stage 1: Label assignment + blob statistics
     // ============================================================
     always_ff @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
@@ -87,9 +73,7 @@ module ccl_analyzer #(
             next_label_id    <= 8'd1;
             for (loop_i = 0; loop_i < IMAGE_WIDTH; loop_i = loop_i + 1)
                 line_buf[loop_i] <= 0;
-
             s1_valid <= 0;  s1_le <= 0;  s1_y <= 0;
-
             for (loop_i = 0; loop_i < MAX_LABELS; loop_i = loop_i + 1) begin
                 lbl_min_x[loop_i]  <= 16'hFFFF;
                 lbl_max_x[loop_i]  <= 0;
@@ -102,12 +86,10 @@ module ccl_analyzer #(
                 lbl_merge[loop_i]  <= loop_i[LABEL_BITS-1:0];
             end
         end else begin
-            // ---- Pipeline delay for frame-end detection ----
             s1_valid <= pixel_valid;
             s1_le    <= line_end;
             s1_y     <= pixel_y;
 
-            // ---- Frame-start: reset per-label stats ----
             if (pixel_valid && frame_start) begin
                 next_label_id = 8'd1;
                 for (loop_i = 0; loop_i < MAX_LABELS; loop_i = loop_i + 1) begin
@@ -124,7 +106,6 @@ module ccl_analyzer #(
             end
 
             if (pixel_valid) begin
-                // ---- Line-start: reset left-neighbour context ----
                 if (line_start)
                     prev_pixel_label = 0;
 
@@ -133,9 +114,9 @@ module ccl_analyzer #(
                     if (prev_pixel_label != 0) begin
                         cur_label = prev_pixel_label;
                         if (above_label_gated != 0 && above_label_gated != prev_pixel_label)
-                            lbl_merge[above_label] <= prev_pixel_label;
+                            lbl_merge[above_label_gated] <= prev_pixel_label;
                     end else if (above_label_gated != 0) begin
-                        cur_label = above_label;
+                        cur_label = above_label_gated;
                     end else begin
                         if (next_label_id < MAX_LABELS - 1) begin
                             cur_label = next_label_id;
@@ -149,11 +130,10 @@ module ccl_analyzer #(
                     cur_label = 0;
                 end
 
-                // Update left-neighbour context & line buffer
                 prev_pixel_label <= cur_label;
                 line_buf[pixel_x] <= cur_label;
 
-                // ---- Blob statistics (same cycle, uses cur_label from above) ----
+                // ---- Blob statistics ----
                 if (binary_data && cur_label != 0) begin
                     if (pixel_x < lbl_min_x[cur_label]) lbl_min_x[cur_label] <= pixel_x;
                     if (pixel_x > lbl_max_x[cur_label]) lbl_max_x[cur_label] <= pixel_x;
@@ -168,11 +148,12 @@ module ccl_analyzer #(
     end
 
     // ============================================================
-    //  Stage 2: Frame-end scan + best-blob selection
+    //  Stage 2: Merge resolve + best-blob selection
     // ============================================================
-    typedef enum logic [1:0] { S2_IDLE, S2_SCAN, S2_OUTPUT } state_t;
+    typedef enum logic [2:0] { S2_IDLE, S2_RESOLVE, S2_SCAN, S2_OUTPUT } state_t;
     state_t state;
     logic [LABEL_BITS-1:0] scan_idx;
+    logic [LABEL_BITS-1:0] merge_root;
 
     // Temporary computation registers
     logic [31:0] s2_bw, s2_bh;
@@ -191,6 +172,7 @@ module ccl_analyzer #(
         if (!reset_n) begin
             state        <= S2_IDLE;
             scan_idx     <= 0;
+            merge_root   <= 0;
             result_valid <= 0;
             target_found <= 0;
             center_x  <= 0;  center_y  <= 0;
@@ -206,17 +188,51 @@ module ccl_analyzer #(
         end else begin
             result_valid <= 0;
 
-            // Detect frame end: s1_le on last row (delayed 1 cycle)
+            // Detect frame end
             if (s1_valid && s1_le && s1_y == (IMAGE_HEIGHT - 1)) begin
-                state    <= S2_SCAN;
+                state    <= S2_RESOLVE;
                 scan_idx <= 8'd1;
-                best_err <= 17'h1FFFF;
-                best_found <= 0;
             end
 
             case (state)
                 S2_IDLE: ;
 
+                // ---- Merge resolution: flatten equivalence chains ----
+                S2_RESOLVE: begin
+                    if (scan_idx < next_label_id) begin
+                        scan_idx <= scan_idx + 8'd1;
+                        if (lbl_active[scan_idx]) begin
+                            // Find root (follow parent chain, max 2 hops)
+                            merge_root = lbl_merge[scan_idx];
+                            if (lbl_merge[merge_root] != merge_root)
+                                merge_root = lbl_merge[merge_root];
+
+                            if (merge_root != scan_idx && merge_root != 0) begin
+                                // Merge scan_idx stats into root
+                                if (lbl_min_x[scan_idx] < lbl_min_x[merge_root])
+                                    lbl_min_x[merge_root] <= lbl_min_x[scan_idx];
+                                if (lbl_max_x[scan_idx] > lbl_max_x[merge_root])
+                                    lbl_max_x[merge_root] <= lbl_max_x[scan_idx];
+                                if (lbl_min_y[scan_idx] < lbl_min_y[merge_root])
+                                    lbl_min_y[merge_root] <= lbl_min_y[scan_idx];
+                                if (lbl_max_y[scan_idx] > lbl_max_y[merge_root])
+                                    lbl_max_y[merge_root] <= lbl_max_y[scan_idx];
+                                lbl_area[merge_root]  <= lbl_area[merge_root]  + lbl_area[scan_idx];
+                                lbl_sum_x[merge_root] <= lbl_sum_x[merge_root] + lbl_sum_x[scan_idx];
+                                lbl_sum_y[merge_root] <= lbl_sum_y[merge_root] + lbl_sum_y[scan_idx];
+                                lbl_active[scan_idx]  <= 1'b0;
+                            end
+                        end
+                    end else begin
+                        // Done resolving. Initialize scan for best-blob.
+                        state    <= S2_SCAN;
+                        scan_idx <= 8'd1;
+                        best_err <= 17'h1FFFF;
+                        best_found <= 0;
+                    end
+                end
+
+                // ---- Scan resolved labels for best circularity ----
                 S2_SCAN: begin
                     if (scan_idx < next_label_id) begin
                         scan_idx <= scan_idx + 8'd1;

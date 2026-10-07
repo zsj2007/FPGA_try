@@ -89,7 +89,7 @@ module vision_pipeline_video_tb;
                 @(negedge pclk);
                 cam_href = 1'b0; cam_data = 10'd0;
             end
-            repeat (8) @(negedge pclk);
+            repeat (1024) @(negedge pclk);
         end
     endtask
 
