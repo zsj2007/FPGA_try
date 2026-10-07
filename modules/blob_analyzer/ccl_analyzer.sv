@@ -240,13 +240,14 @@ module ccl_analyzer #(
                             s2_bw   = {16'd0, lbl_max_x[scan_idx]} - {16'd0, lbl_min_x[scan_idx]} + 32'd1;
                             s2_bh   = {16'd0, lbl_max_y[scan_idx]} - {16'd0, lbl_min_y[scan_idx]} + 32'd1;
                             s2_ba   = s2_bw * s2_bh;
-                            s2_circ = (s2_ba > 0)
-                                ? 16'(({24'd0, lbl_area[scan_idx]} * 48'd65536) / s2_ba)
-                                : 16'd0;
-                            s2_err  = (s2_circ > CIRC_TARGET_Q16)
-                                ? {1'b0, s2_circ} - {1'b0, CIRC_TARGET_Q16[15:0]}
-                                : {1'b0, CIRC_TARGET_Q16[15:0]} - {1'b0, s2_circ};
-                            if (s2_err < best_err) begin
+                            // Aspect ratio: |width - height|, closest to square (1:1) wins
+                            s2_err  = (s2_bw > s2_bh)
+                                ? {1'b0, s2_bw} - {1'b0, s2_bh}
+                                : {1'b0, s2_bh} - {1'b0, s2_bw};
+                            s2_circ = 16'd0;  // unused
+                            // Best aspect ratio (smallest |w-h|). Tiebreaker: larger area.
+                            if ((s2_err < best_err) ||
+                                (s2_err == best_err && lbl_area[scan_idx] > best_area)) begin
                                 best_err   <= s2_err;
                                 best_found <= 1;
                                 best_cx <= 16'(lbl_sum_x[scan_idx] / {8'd0, lbl_area[scan_idx]});

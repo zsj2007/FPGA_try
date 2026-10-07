@@ -38,13 +38,15 @@ module vision_pipeline_video_tb;
     logic [15:0] bbox_top;
     logic [15:0] bbox_bottom;
     logic [23:0] blob_area;
-    logic [15:0] blob_ratio_q16;
+    logic [15:0] blob_aspect_q16;
     logic        los_valid;
     logic [31:0] hfov_q16;
     logic [31:0] vfov_q16;
     logic [31:0] omega_hfov_q16;
     logic [31:0] omega_vfov_q16;
     logic        omega_valid;
+    logic        debug_binary_data;
+    logic        debug_binary_valid;
 
     integer input_file, output_file, dets_file;
     integer bytes_read, file_size, total_frames, process_frames;
@@ -67,9 +69,10 @@ module vision_pipeline_video_tb;
         .center_x(center_x), .center_y(center_y),
         .bbox_left(bbox_left), .bbox_right(bbox_right),
         .bbox_top(bbox_top), .bbox_bottom(bbox_bottom),
-        .blob_area(blob_area), .blob_ratio_q16(blob_ratio_q16),
+        .blob_area(blob_area), .blob_aspect_q16(blob_aspect_q16),
         .los_valid(los_valid), .hfov_q16(hfov_q16), .vfov_q16(vfov_q16),
-        .omega_hfov_q16(omega_hfov_q16), .omega_vfov_q16(omega_vfov_q16), .omega_valid(omega_valid)
+        .omega_hfov_q16(omega_hfov_q16), .omega_vfov_q16(omega_vfov_q16), .omega_valid(omega_valid),
+    .debug_binary_data(debug_binary_data), .debug_binary_valid(debug_binary_valid)
     );
 
     task automatic send_frame;
@@ -97,7 +100,7 @@ module vision_pipeline_video_tb;
         #1;
         if (result_valid) begin
             $display("[frame %0d] det: found=%0d cx=%0d cy=%0d area=%0d ratio=%0d",
-                     current_frame, target_found, center_x, center_y, blob_area, blob_ratio_q16);
+                     current_frame, target_found, center_x, center_y, blob_area, blob_aspect_q16);
             $display("        bbox: l=%0d r=%0d t=%0d b=%0d",
                      bbox_left, bbox_right, bbox_top, bbox_bottom);
 
