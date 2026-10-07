@@ -1,0 +1,29 @@
+# Vivado build products
+build/
+.Xil/
+*.jou
+*.log
+*.str
+*.wdb
+xsim.dir/
+
+# Generated Vivado directories if they appear outside build/
+*.cache/
+*.gen/
+*.runs/
+*.sim/
+*.ip_user_files/
+
+# Python
+__pycache__/
+*.pyc
+
+# Simulation outputs
+sim/data/input/*
+!sim/data/input/.gitkeep
+sim/data/output/*
+!sim/data/output/.gitkeep
+
+# Editor/OS
+.vscode/
+Thumbs.db

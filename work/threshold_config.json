@@ -1,0 +1,9 @@
+{
+    "threshold": 1000,
+    "input_video": "C:/Users/Lenovo/Desktop/飞镖图/2727f2625218be8c54aa1c943351880c.mp4",
+    "output_video": "D:/new_FPGA/sim/data/output/binary_preview.mp4",
+    "width": 640,
+    "height": 400,
+    "fps": 30,
+    "invert": false
+}
