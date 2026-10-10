@@ -1,13 +1,30 @@
+"""Convert boxed RAW16 output to MP4 video."""
+import sys, numpy as np, cv2, os
 
-import numpy as np, cv2, os
-W,H,FRAMES=640,400,677
-raw=np.fromfile(r'D:\new_FPGA\sim\data\output\vid_2727_boxed_640x400.raw',dtype=np.uint8)
-data=raw[:W*H*FRAMES].reshape(FRAMES,H,W)
-print(f'Frame 0: min={data[0].min()} max={data[0].max()}')
-fourcc=cv2.VideoWriter_fourcc(*'avc1')
-out=cv2.VideoWriter(r'D:\new_FPGA\sim\data\output\vid_2727_boxed.mp4',fourcc,30,(W,H),True)
-for i in range(FRAMES):
-    out.write(cv2.cvtColor(data[i],cv2.COLOR_GRAY2BGR))
-    if i%100==0: print(f'Frame {i}')
-out.release()
-print(f'Done: {os.path.getsize(r"D:\\new_FPGA\\sim\\data\\output\\vid_2727_boxed.mp4")/1024/1024:.1f}MB')
+def main():
+    if len(sys.argv) < 3:
+        print("Usage: python convert_mp4.py <input.raw> <output.mp4> [width] [height]")
+        sys.exit(1)
+
+    raw_path = sys.argv[1]
+    out_path = sys.argv[2]
+    W = int(sys.argv[3]) if len(sys.argv) > 3 else 640
+    H = int(sys.argv[4]) if len(sys.argv) > 4 else 400
+
+    fsize = os.path.getsize(raw_path)
+    frames = fsize // (W * H * 2)
+    print(f"  Input: {raw_path} ({fsize} bytes, {frames} frames)")
+
+    raw16 = np.fromfile(raw_path, dtype=np.uint16).reshape(frames, H, W)
+    raw8 = (raw16 >> 2).astype(np.uint8)
+
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    out = cv2.VideoWriter(out_path, fourcc, 30, (W, H))
+    for i in range(frames):
+        bgr = cv2.cvtColor(raw8[i], cv2.COLOR_GRAY2BGR)
+        out.write(bgr)
+    out.release()
+    print(f"  Output: {out_path} ({os.path.getsize(out_path) // 1024} KB)")
+
+if __name__ == "__main__":
+    main()

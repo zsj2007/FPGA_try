@@ -1,101 +1,29 @@
-# binary_threshold：灰度二值化
+# binary_threshold — 灰度二值化
 
-## 1. 功能
+## 功能
 
-黑白摄像头输出的是灰度，不是真正的绿色通道。目标绿灯在黑白画面中通常表现为较亮的区域。本模块只根据亮度把灰度图转换成黑白二值图：
+将 10-bit 灰度像素流转换为 1-bit 二值流。当 `pixel_data >= THRESHOLD` 时输出 1（白），否则输出 0（黑）。控制信号（valid, frame_start, line_start, line_end, x, y）打一拍延迟后透传。
 
-```text
-pixel_data >= THRESHOLD  → binary_data = 1（白）
-pixel_data <  THRESHOLD  → binary_data = 0（黑）
-```
+## 接口
 
-任何足够亮的白灯、反光或装甲板灯条也可能输出1，因此二值化之后仍需要形态学和目标几何筛选。
+| 信号 | 方向 | 位宽 | 说明 |
+|------|------|------|------|
+| clk | input | 1 | 时钟 |
+| reset_n | input | 1 | 低有效复位 |
+| pixel_data | input | PIXEL_WIDTH | 灰度输入 |
+| pixel_valid | input | 1 | 像素有效 |
+| frame_start / line_start / line_end | input | 1 | 帧/行同步 |
+| pixel_x / pixel_y | input | 16 | 像素坐标 |
+| binary_data | output | 1 | 二值输出（0 或 1） |
+| binary_valid / binary_frame_start / ... | output | - | 延迟一拍的控制信号 |
 
-## 2. 参数
+## 参数
 
-| 参数 | 默认值 | 含义 |
-|---|---:|---|
-| `PIXEL_WIDTH` | 10 | 输入灰度位宽，10位范围为0～1023 |
-| `THRESHOLD` | 512 | 二值化亮度阈值 |
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| PIXEL_WIDTH | 10 | 输入像素位宽 |
+| THRESHOLD | 1000 | 二值化阈值（10-bit），当前用 10'd1000 |
 
-`512` 是10位灰度范围的中点，大约相当于8位图片中的：
+## 时序
 
-```text
-512 / 4 = 128
-```
-
-也就是8位灰度 `128/255` 左右。这只是便于开始仿真的初始值，并不代表真实比赛环境中的最佳值。
-
-当前阈值是 `parameter`，修改后需要重新综合并生成 bitstream：
-
-```systemverilog
-binary_threshold #(
-    .PIXEL_WIDTH (10),
-    .THRESHOLD   (10'd512)
-) u_binary_threshold (...);
-```
-
-如果以后需要在程序运行时调节阈值，应把它改成输入端口，并由 PS 通过 AXI 寄存器设置。
-
-## 3. 输入变量
-
-| 输入 | 含义 |
-|---|---|
-| `clk` | 当前像素流使用的时钟；直接连接摄像头时就是 `PCLK` |
-| `reset_n` | 低电平复位 |
-| `pixel_data` | 10位灰度像素 |
-| `pixel_valid` | 当前输入像素有效 |
-| `frame_start` | 当前像素是一帧的第一个像素 |
-| `line_start` | 当前像素是一行的第一个像素 |
-| `line_end` | 当前像素是一行的最后一个像素 |
-| `pixel_x` | 当前输入像素横坐标 |
-| `pixel_y` | 当前输入像素纵坐标 |
-
-## 4. 输出变量
-
-| 输出 | 含义 |
-|---|---|
-| `binary_data` | 二值像素，1表示亮，0表示暗 |
-| `binary_valid` | 当前二值像素有效 |
-| `binary_frame_start` | 与输出像素对齐的帧首 |
-| `binary_line_start` | 与输出像素对齐的行首 |
-| `binary_line_end` | 与输出像素对齐的行尾 |
-| `binary_x` | 与输出像素对齐的横坐标 |
-| `binary_y` | 与输出像素对齐的纵坐标 |
-
-模块在输入基础上增加一级寄存器，因此输出比输入晚一个 `clk` 周期。像素、有效标志、坐标和边界标志一起延迟，不会错位。
-
-只有 `binary_valid == 1` 时才应使用其他输出。
-
-## 5. 边界规则
-
-阈值比较使用 `>=`，所以：
-
-| 输入灰度 | 二值结果 |
-|---:|---:|
-| 0 | 0 |
-| 511 | 0 |
-| 512 | 1 |
-| 1023 | 1 |
-
-## 6. 如何确定真实阈值
-
-最终不能只凭感觉选择阈值。上板后应固定曝光和增益，采集包含目标灯、装甲板灯、基地灯和反光的真实灰度数据，再观察亮度分布。
-
-理想情况是：
-
-```text
-背景和噪声的最大亮度 < THRESHOLD < 目标灯的最小亮度
-```
-
-如果两者亮度范围重叠，仅调整阈值无法完全分开，需要继续使用 ROI、形态、面积、长宽比和多帧稳定性。
-
-## 7. 测试
-
-`binary_threshold_tb.sv` 专门测试 `0、511、512、1023` 四个边界值，并检查坐标和帧/行标志是否仍与对应像素对齐。
-
-成功时打印：
-
-```text
-PASS: binary_threshold boundary values
-```
+1 周期延迟。输入 valid 和 data 在同一拍，输出 binary_* 在下一拍有效。

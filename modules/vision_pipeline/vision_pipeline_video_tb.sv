@@ -10,9 +10,9 @@ module vision_pipeline_video_tb;
     localparam logic [9:0] THRESHOLD    = 10'd1000;
     localparam integer BOX_THICKNESS    = 2;
 
-    localparam string INPUT_FILE  = "D:/new_FPGA/sim/data/input/vid_2727_640x400.raw";
-    localparam string OUTPUT_FILE = "D:/new_FPGA/sim/data/output/vid_2727_boxed_640x400.raw";
-    localparam string DETS_FILE   = "D:/new_FPGA/sim/data/output/vid_2727_dets.json";
+    localparam string INPUT_FILE  = "D:/new_FPGA/sim/data/input/2727f2625218be8c54aa1c943351880c_640x400.raw";
+    localparam string OUTPUT_FILE = "D:/new_FPGA/sim/data/output/2727f2625218be8c54aa1c943351880c_boxed_640x400.raw";
+    localparam string DETS_FILE   = "D:/new_FPGA/sim/data/output/2727f2625218be8c54aa1c943351880c_dets.json";
     localparam integer MAX_FRAMES = 0;
 
     logic        pclk = 1'b0;
