@@ -1,5 +1,9 @@
 `timescale 1ns / 1ps
 
+// Legacy all-PL implementation, retained for the existing video top-level.
+// PL/PS split: ccl_analyzer_pl.sv + software/ccl_split/ccl_ps.c.
+// See software/ccl_split/README.md for protocol and integration requirements.
+
 // Connected Component Labeling + circularity detection.
 // Single-pass streaming CCL with 1 line buffer of label IDs.
 // Includes label equivalence resolution (merge) at frame end.

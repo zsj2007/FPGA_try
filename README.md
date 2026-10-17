@@ -26,6 +26,33 @@
 | cordic_atan2 | `modules/los_guidance/` | 流水线 CORDIC atan2 |
 | los_guidance | `modules/los_guidance/` | 针孔模型视线角 + 角速率 |
 | vision_pipeline | `modules/vision_pipeline/` | 顶层集成流水线 |
+| ccl_frontend | `modules/ccl_frontend/` | **NEW** 流式 CCL 前端（标签分配+统计） |
+| axi_ccl_bridge | `modules/axi_bridge/` | **NEW** AXI4-Lite 双缓冲 BRAM 桥 |
+| ps_ccl_merge | `software/` | **NEW** PS 端并查集归并 + 目标筛选 (C) |
+
+
+
+## PS/PL 协同架构（开发中）
+
+```
+ PL (FPGA)                              PS (ARM A9)
+ ────────────────────────              ──────────────────
+ camera_capture                        ccl_merge_labels()
+      ↓                                       ↑ AXI read
+ binary_threshold                             │
+      ↓                              union-find 归并
+ morphology (erode/dilate)                   │
+      ↓                              ccl_select_target()
+ ccl_frontend (标签分配+统计)              │
+      ↓                                       ↓ AXI write
+ axi_ccl_bridge (双缓冲 BRAM) ←──AXI4-Lite──→ 结果回写
+      │
+ bounding_box_overlay ←── 读 PS 结果画框
+      │
+ los_guidance ←── 读 PS 结果解算 LOS
+```
+
+PS 和 PL 处理不同帧：PL 处理帧 N 时，PS 归并帧 N-1 的标签并回写结果。
 
 ## 仿真
 
